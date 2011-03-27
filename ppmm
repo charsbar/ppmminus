@@ -7,7 +7,6 @@ use File::Path ();
 use File::Spec;
 use Getopt::Long ();
 use LWP::UserAgent;
-use URI;
 
 local $ENV{CYGWIN} = 'nodosfilewarning';
 
@@ -22,6 +21,7 @@ Getopt::Long::GetOptions(\my %opts, qw{
 $opts{server} ||= 'http://ppm.charsbar.org/api/';
 
 my %extutils;
+my %escape = map { chr($_) => sprintf('%%%02X', $_) } (0..255);
 
 my $arch = _my_arch();
 my $workdir;
@@ -40,8 +40,7 @@ if ($cmd eq 'install') {
   my %requires;
 
   while(my $name = shift @args) {
-    my $uri = URI->new($opts{server});
-    $uri->query_form({
+    my $uri = _build_url($opts{server}, {
       c    => 'install',
       arch => $arch,
       name => $name,
@@ -253,6 +252,22 @@ sub _its_core {
     return 1;
   }
   return;
+}
+
+sub _build_url {
+  my ($url, $params) = @_;
+  if (%$params) {
+    $url .= ($url =~ /\?/) ? '%' : '?';
+  }
+  $url .= join '&', map { "$_="._uri_escape($params->{$_}) }
+                    keys %$params;
+  $url;
+}
+
+sub _uri_escape {
+  my $str = shift;
+  $str =~ s/([^A-Za-z0-9\-\._~\/])/$escape{$1} || die sprintf("Can't escape \\x{%04X}", ord $1)/ge;
+  $str;
 }
 
 END { File::Path::rmtree($workdir) if $workdir && -d $workdir }
