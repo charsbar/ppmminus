@@ -11,7 +11,6 @@ my %params = (
   PREREQ_PM     => {
     # TODO: should be nothing
     'LWP::UserAgent' => 0,
-    'URI'            => 0,
   },
   BUILD_REQUIRES => {
     'Test::More' => '0.47',
