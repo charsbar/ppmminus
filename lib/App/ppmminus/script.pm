@@ -9,47 +9,64 @@ use File::Spec;
 use Getopt::Long ();
 use LWP::UserAgent;
 
-local $ENV{CYGWIN} = 'nodosfilewarning';
+my (%escape, %core, $quote, $ua);
 
-Getopt::Long::GetOptions(\my %opts, qw{
-  force
-  verbose
-  dry_run
-  area
-  server=s
-});
-
-$opts{server} ||= 'http://ppm.charsbar.org/api/';
-
-my %extutils;
-my %escape = map { chr($_) => sprintf('%%%02X', $_) } (0..255);
-my %core;
-if (eval{ require Module::CoreList; 1}) {
-  no warnings 'once';
-  %core = %{$Module::CoreList::version{$]}};
+BEGIN {
+  %escape = map { chr($_) => sprintf('%%%02X', $_) } (0..255);
+  $quote  = ($^O eq 'MSWin32') ? q/"/ : q/'/;
+  $ua     = LWP::UserAgent->new(env_proxy => 1);
 }
 
-my $arch = _my_arch();
-my $workdir;
+sub new {
+  my $class = shift;
 
-my $ua = LWP::UserAgent->new(env_proxy => 1);
+  _set_corelist();
 
-my ($cmd, @args) = @ARGV;
+  bless {
+    %{ _get_options() },
+    workdir  => undef,
+    extutils => {},
+    arch     => _my_arch(),
+  }, $class;
+}
 
-$cmd = '' unless defined $cmd;
+sub DESTROY {
+  my $self = shift;
+  my $workdir = $self->{workdir};
+  File::Path::rmtree($workdir) if $workdir && -d $workdir;
+}
 
-if ($cmd eq 'install') {
-  _create_workdir();
+sub run {
+  my $self = shift;
+
+  my ($cmd, @args) = @ARGV;
+
+  $cmd = '' unless defined $cmd;
+
+  my %mapping = (
+    install => \&install,
+  );
+
+  if (my $method = $mapping{$cmd}) {
+    $self->$method(@args);
+  }
+  else {
+    $self->show_usage;
+  }
+}
+
+sub install {
+  my ($self, @args) = @_;
 
   my @dists;
   my %seen;
   my %requires;
 
   while(my $name = shift @args) {
-    print "going to install $name\n" if $opts{verbose};
-    my $uri = _build_url($opts{server}, {
+    print "going to install $name\n" if $self->{verbose};
+    my $uri = _build_url($self->{server}, {
       c    => 'install',
-      arch => $arch,
+      arch => $self->{arch},
       name => $name,
     });
     my $res = $ua->get($uri);
@@ -59,7 +76,7 @@ if ($cmd eq 'install') {
         my $req_ver = exists $requires{$name}
           ? ($requires{$name} || 0)
           : undef;
-        next if defined $req_ver && _its_core($module, $req_ver);
+        next if defined $req_ver && _is_core($module, $req_ver);
         warn "$name is not found (maybe core?)\n";
         next;
       }
@@ -98,25 +115,25 @@ DISTLOOP:
     print "installing $name from $uri\n";
 
     my ($basename) = $uri =~ m{([^/]+)$};
-    my $archive = File::Spec->catfile($workdir, $basename);
+    my $archive = File::Spec->catfile($self->_workdir, $basename);
     $archive =~ s{\\}{/}g;
     $ua->mirror($uri, $archive);
-    my $dir = File::Spec->catdir($workdir, $name);
+    my $dir = File::Spec->catdir($self->_workdir, $name);
     $dir =~ s{\\}{/}g;
     if ($basename =~ /\.tar\.gz$/) {
-      my $res = _untar($archive, $dir);
+      my $res = $self->_untar($archive, $dir);
     }
     elsif ($basename =~ /\.zip$/) {
-      my $res = _unzip($archive, $dir);
+      my $res = $self->_unzip($archive, $dir);
     }
     else {
       die "Unknown archive type: $uri";
     }
 
     # TODO: perlbrew/local_lib support
-    my $area = (!$opts{area}) ? 'site'
-             : ($opts{area} eq 'perl') ? ''
-             : ($opts{area} eq 'vendor') ? 'vendor'
+    my $area = (!$self->{area}) ? 'site'
+             : ($self->{area} eq 'perl') ? ''
+             : ($self->{area} eq 'vendor') ? 'vendor'
              : 'site';
     my %from_to;
     for my $type (qw/arch bin lib man1 man3 script/) {
@@ -128,128 +145,43 @@ DISTLOOP:
 
     ExtUtils::Install::install([
       from_to => \%from_to,
-      verbose => $opts{verbose},
-      dry_run => $opts{dry_run},
+      verbose => $self->{verbose},
+      dry_run => $self->{dry_run},
       uninstall_shadows => 0,
-      always_copy => $opts{force},
+      always_copy => $self->{force},
       result => \my %installed,
     ]);
   }
 }
-else {
+
+sub show_usage {
+  my $self = shift;
   print "Usage: $0 install <Module or Distribution name>\n";
-  exit;
 }
 
-exit;
+# utils
 
-# borrowed from PPM::Repositories by D.H. (PodMaster)
+sub _get_options {
+  Getopt::Long::GetOptions(\my %opts, qw{
+    force
+    verbose
+    dry_run
+    area
+    server=s
+  });
 
-sub _my_arch {
-  my $arch = $Config::Config{archname};
-  if ($] >= 5.008) {
-    $arch .= "-$Config::Config{PERL_REVISION}.$Config::Config{PERL_VERSION}";
-  }
-  return $arch;
+  $opts{server} ||= 'http://ppm.charsbar.org/api/';
+  \%opts;
 }
 
-# borrowed from App::cpanminus by Tatsuhiko Miyagawa
-
-sub _untar {
-  if ($extutils{untar}) {
-    return $extutils{untar}->(@_);
+sub _set_corelist {
+  if (!%core && eval{ require Module::CoreList; 1}) {
+    no warnings 'once';
+    %core = %{$Module::CoreList::version{$]}};
   }
-
-  my $tar = _which('tar');
-  my $tar_ver;
-  my $devnull = File::Spec->devnull;
-  my $maybe_bad_tar = $tar && ($^O eq 'MSWin32' || $^O eq 'solaris' || (($tar_ver = `$tar --version 2>$devnull`) =~ /GNU.*1\.13/i));
-
-  if ($tar && !$maybe_bad_tar) {
-    chomp $tar_ver;
-    print "use $tar $tar_ver\n";
-    $extutils{untar} = sub {
-      my ($file, $into) = @_;
-
-      my $xf = ($opts{verbose} ? 'v' : '') . "zxf";
-      my ($root, @others) = `$tar tfz $file` or return;
-
-      chomp $root;
-      $root =~ s{/([^/]*)}{};
-      system("$tar $xf --directory=$into $file") and die $?;
-    };
-  }
-  elsif ($tar and my $gzip = _which('gzip')) {
-    print "use $tar and $gzip\n";
-    $extutils{untar} = sub {
-      my ($file, $into) = @_;
-
-      my $xf = ($opts{verbose} ? 'v' : '') . "xf -";
-      my ($root, @others) = `$gzip -dc $file | $tar tf -` or return;
-
-      chomp $root;
-      $root =~ s{/([^/]*)}{};
-      File::Path::mkpath($into, $opts{verbose}, 0777);
-      system("$gzip -dc $file | $tar $xf --directory=$into") and die $?;
-    };
-  }
-  else {
-    # TODO: Archive::Tar
-  }
-  $extutils{untar}->(@_);
 }
 
-sub _unzip {
-  if ($extutils{unzip}) {
-    return $extutils{unzip}->(@_);
-  }
-
-  if (my $unzip = _which('unzip')) {
-    print "use $unzip\n";
-    $extutils{unzip} = sub {
-      my ($file, $into) = @_;
-
-      my $opt = $opts{verbose} ? '' : '-q';
-      my (undef, $root, @others) = `$unzip -t $file` or return;
-
-      chomp $root;
-      $root =~ s{^\s+testing:\s+(.+?)/\s+OK$}{$1};
-
-      system("$unzip $opt -d $into $file") and die $?;
-    };
-  }
-  else {
-    # TODO: Archive::Zip
-  }
-  $extutils{unzip}->(@_);
-}
-
-my $quote = ($^O eq 'MSWin32') ? q/"/ : q/'/;
-sub _quote {
-  $_[0] =~ /^${quote}.+${quote}$/ ? $_[0] : "$quote$_[0]$quote";
-}
-
-sub _which {
-  my $exe = shift;
-  my $ext = $Config::Config{exe_ext};
-  for my $dir (File::Spec->path) {
-    my $fullpath = File::Spec->catfile($dir, $exe);
-    if (-x $fullpath or -x ($fullpath .= $ext)) {
-      if ($fullpath =~ /\s/ && $fullpath !~ /^$quote/) {
-        $fullpath = _quote($fullpath);
-      }
-      return $fullpath;
-    }
-  }
-  return;
-}
-
-sub _create_workdir {
-  $workdir = "$ENV{HOME}/.ppmm/download/".time."-$$";
-  File::Path::mkpath($workdir, $opts{verbose}, 0777);
-}
-
-sub _its_core {
+sub _is_core {
   my ($name, $version) = @_;
   if (exists $core{$name} && ($core{$name} || 0) >= ($version || 0)) {
     return 1;
@@ -273,7 +205,116 @@ sub _uri_escape {
   $str;
 }
 
-END { File::Path::rmtree($workdir) if $workdir && -d $workdir }
+# borrowed from PPM::Repositories by D.H. (PodMaster)
+
+sub _my_arch {
+  my $arch = $Config::Config{archname};
+  if ($] >= 5.008) {
+    $arch .= "-$Config::Config{PERL_REVISION}.$Config::Config{PERL_VERSION}";
+  }
+  return $arch;
+}
+
+# borrowed from App::cpanminus by Tatsuhiko Miyagawa
+
+sub _untar {
+  my $self = shift;
+  if ($self->{extutils}{untar}) {
+    return $self->{extutils}{untar}->(@_);
+  }
+
+  my $tar = _which('tar');
+  my $tar_ver;
+  my $devnull = File::Spec->devnull;
+  my $maybe_bad_tar = $tar && ($^O eq 'MSWin32' || $^O eq 'solaris' || (($tar_ver = `$tar --version 2>$devnull`) =~ /GNU.*1\.13/i));
+
+  if ($tar && !$maybe_bad_tar) {
+    chomp $tar_ver;
+    print "use $tar $tar_ver\n";
+    $self->{extutils}{untar} = sub {
+      my ($file, $into) = @_;
+
+      my $xf = ($self->{verbose} ? 'v' : '') . "zxf";
+      my ($root, @others) = `$tar tfz $file` or return;
+
+      chomp $root;
+      $root =~ s{/([^/]*)}{};
+      system("$tar $xf --directory=$into $file") and die $?;
+    };
+  }
+  elsif ($tar and my $gzip = _which('gzip')) {
+    print "use $tar and $gzip\n";
+    $self->{extutils}{untar} = sub {
+      my ($file, $into) = @_;
+
+      my $xf = ($self->{verbose} ? 'v' : '') . "xf -";
+      my ($root, @others) = `$gzip -dc $file | $tar tf -` or return;
+
+      chomp $root;
+      $root =~ s{/([^/]*)}{};
+      File::Path::mkpath($into, $self->{verbose}, 0777);
+      system("$gzip -dc $file | $tar $xf --directory=$into") and die $?;
+    };
+  }
+  else {
+    # TODO: Archive::Tar
+  }
+  $self->{extutils}{untar}->(@_);
+}
+
+sub _unzip {
+  my $self = shift;
+  if ($self->{extutils}{unzip}) {
+    return $self->{extutils}{unzip}->(@_);
+  }
+
+  if (my $unzip = _which('unzip')) {
+    print "use $unzip\n";
+    $self->{extutils}{unzip} = sub {
+      my ($file, $into) = @_;
+
+      my $opt = $self->{verbose} ? '' : '-q';
+      my (undef, $root, @others) = `$unzip -t $file` or return;
+
+      chomp $root;
+      $root =~ s{^\s+testing:\s+(.+?)/\s+OK$}{$1};
+
+      system("$unzip $opt -d $into $file") and die $?;
+    };
+  }
+  else {
+    # TODO: Archive::Zip
+  }
+  $self->{extutils}{unzip}->(@_);
+}
+
+sub _quote {
+  $_[0] =~ /^${quote}.+${quote}$/ ? $_[0] : "$quote$_[0]$quote";
+}
+
+sub _which {
+  my $exe = shift;
+  my $ext = $Config::Config{exe_ext};
+  for my $dir (File::Spec->path) {
+    my $fullpath = File::Spec->catfile($dir, $exe);
+    if (-x $fullpath or -x ($fullpath .= $ext)) {
+      if ($fullpath =~ /\s/ && $fullpath !~ /^$quote/) {
+        $fullpath = _quote($fullpath);
+      }
+      return $fullpath;
+    }
+  }
+  return;
+}
+
+sub _workdir {
+  my $self = shift;
+  return $self->{workdir} if $self->{workdir};
+
+  my $workdir = "$ENV{HOME}/.ppmm/download/".time."-$$";
+  File::Path::mkpath($workdir, $self->{verbose}, 0777);
+  $self->{workdir} = $workdir;
+}
 
 __END__
 
