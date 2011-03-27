@@ -45,6 +45,7 @@ if ($cmd eq 'install') {
   my %requires;
 
   while(my $name = shift @args) {
+    print "going to install $name\n" if $opts{verbose};
     my $uri = _build_url($opts{server}, {
       c    => 'install',
       arch => $arch,
