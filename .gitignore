@@ -1,0 +1,6 @@
+blib
+Makefile
+*.old
+*.bak
+pm_to_blib
+ppmm
