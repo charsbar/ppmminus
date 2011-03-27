@@ -14,8 +14,7 @@ my %params = (
     'URI'            => 0,
   },
   BUILD_REQUIRES => {
-    'Test::More'          => '0.47',
-    'Test::UseAllModules' => '0.10',
+    'Test::More' => '0.47',
   },
   EXE_FILES => [qw/ppmm/],
   META_MERGE => {
