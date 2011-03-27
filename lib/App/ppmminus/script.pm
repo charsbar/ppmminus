@@ -1,4 +1,5 @@
-#!perl
+package App::ppmminus::script;
+
 use strict;
 use warnings;
 use Config ();
@@ -282,7 +283,8 @@ ppmm - yet another PPM client
 
 =head1 SYNOPSIS
 
-  $ ppmm install App-ppmminus
+  $ ppmm install App::ppmminus (module name)
+  $ ppmm install App-ppmminus  (distribution name)
 
 =head1 AUTHOR
 

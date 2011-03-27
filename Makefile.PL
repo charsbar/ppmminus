@@ -16,6 +16,10 @@ my %params = (
     'Test::More' => '0.47',
   },
   EXE_FILES => [qw/ppmm/],
+  PM => {
+    'lib/App/ppmminus.pm' => '$(INST_LIB)/App/ppmminus.pm',
+  },
+  clean => { FILES => 'ppmm' },
   META_MERGE => {
     resources => {
       repository => 'http://github.com/charsbar/ppmminus',
