@@ -183,7 +183,7 @@ sub _untar {
 
       chomp $root;
       $root =~ s{/([^/]*)}{};
-      File::Path::mkpath($into, 0777);
+      File::Path::mkpath($into, $opts{verbose}, 0777);
       system("$gzip -dc $file | $tar $xf --directory=$into") and die $?;
     };
   }
@@ -240,7 +240,7 @@ sub _which {
 
 sub _create_workdir {
   $workdir = "$ENV{HOME}/.ppmm/download/".time."-$$";
-  File::Path::mkpath($workdir, 0777);
+  File::Path::mkpath($workdir, $opts{verbose}, 0777);
 }
 
 sub _its_core {
