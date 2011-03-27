@@ -22,6 +22,11 @@ $opts{server} ||= 'http://ppm.charsbar.org/api/';
 
 my %extutils;
 my %escape = map { chr($_) => sprintf('%%%02X', $_) } (0..255);
+my %core;
+if (eval{ require Module::CoreList; 1}) {
+  no warnings 'once';
+  %core = %{$Module::CoreList::version{$]}};
+}
 
 my $arch = _my_arch();
 my $workdir;
@@ -244,11 +249,7 @@ sub _create_workdir {
 
 sub _its_core {
   my ($name, $version) = @_;
-  eval { require Module::CoreList; 1 } or die $@; #return;
-  if (
-    exists $Module::CoreList::version{$]}{$name} &&
-    ($Module::CoreList::version{$]}{$name} || 0) >= ($version || 0)
-  ) {
+  if (exists $core{$name} && ($core{$name} || 0) >= ($version || 0)) {
     return 1;
   }
   return;
