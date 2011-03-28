@@ -61,7 +61,7 @@ sub install {
   my %requires;
 
   while(my $name = shift @args) {
-    print "going to install $name\n" if $self->{verbose};
+    print "going to install $name\n";
     my $uri = _build_url($self->{server}, {
       c    => 'install',
       arch => $self->{arch},
