@@ -8,12 +8,11 @@ use File::Path ();
 use File::Spec;
 use Getopt::Long ();
 
-my (%escape, %core, $quote, $ua);
+my (%escape, %core, $quote);
 
 BEGIN {
   %escape = map { chr($_) => sprintf('%%%02X', $_) } (0..255);
   $quote  = ($^O eq 'MSWin32') ? q/"/ : q/'/;
-  $ua     = LWP::UserAgent->new(env_proxy => 1);
 }
 
 sub new {
