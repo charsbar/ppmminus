@@ -166,6 +166,11 @@ sub _get_options {
   });
 
   $opts{server} ||= 'http://ppm.charsbar.org/api/';
+
+  if (!defined $opts{lwp} && !$opts{wget} && !$opts{curl}) {
+    $opts{lwp} = 1;
+  }
+
   \%opts;
 }
 
