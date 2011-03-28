@@ -75,7 +75,7 @@ sub install {
         ? ($requires{$name} || 0)
         : undef;
       next if defined $req_ver && _is_core($module, $req_ver);
-      warn "$name is not found (maybe core?)\n";
+      warn "$name not found\n";
       next;
     }
     my $items = eval $content;
