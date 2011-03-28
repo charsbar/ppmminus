@@ -314,7 +314,7 @@ sub _prepare_client {
     my $ua = LWP::UserAgent->new(
       parse_head => 0,
       env_proxy  => 1,
-      agent      => "ppmminus/$App::ppmminus::script::VERSION",
+      agent      => "ppmminus/$VERSION",
     );
     $self->{extutils}{get} = sub {
       my ($self, $uri) = @_;
