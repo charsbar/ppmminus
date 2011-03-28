@@ -9,8 +9,6 @@ my %params = (
   ABSTRACT_FROM => 'lib/App/ppmminus.pm',
   LICENSE       => 'perl',
   PREREQ_PM     => {
-    # TODO: should be nothing
-    'LWP::UserAgent' => 0,
   },
   BUILD_REQUIRES => {
     'Test::More' => '0.47',

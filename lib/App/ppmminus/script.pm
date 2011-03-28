@@ -7,7 +7,6 @@ use ExtUtils::Install ();
 use File::Path ();
 use File::Spec;
 use Getopt::Long ();
-use LWP::UserAgent;
 
 my (%escape, %core, $quote, $ua);
 
@@ -69,22 +68,16 @@ sub install {
       arch => $self->{arch},
       name => $name,
     });
-    my $res = $ua->get($uri);
-    unless ((my $code = $res->code) == 200) {
-      if ($code == 404) {
-        (my $module = $name) =~ s/::$//;
-        my $req_ver = exists $requires{$name}
-          ? ($requires{$name} || 0)
-          : undef;
-        next if defined $req_ver && _is_core($module, $req_ver);
-        warn "$name is not found (maybe core?)\n";
-        next;
-      }
-      else {
-        die $res->status_line . "\n";
-      }
+    my $content = $self->_get($uri);
+    unless ($content) {
+      (my $module = $name) =~ s/::$//;
+      my $req_ver = exists $requires{$name}
+        ? ($requires{$name} || 0)
+        : undef;
+      next if defined $req_ver && _is_core($module, $req_ver);
+      warn "$name is not found (maybe core?)\n";
+      next;
     }
-    my $content = $res->decoded_content;
     my $items = eval $content;
 
 DISTLOOP:
@@ -117,7 +110,7 @@ DISTLOOP:
     my ($basename) = $uri =~ m{([^/]+)$};
     my $archive = File::Spec->catfile($self->_workdir, $basename);
     $archive =~ s{\\}{/}g;
-    $ua->mirror($uri, $archive);
+    $self->_mirror($uri, $archive);
     my $dir = File::Spec->catdir($self->_workdir, $name);
     $dir =~ s{\\}{/}g;
     if ($basename =~ /\.tar\.gz$/) {
@@ -168,6 +161,9 @@ sub _get_options {
     dry_run
     area
     server=s
+    lwp!
+    wget!
+    curl!
   });
 
   $opts{server} ||= 'http://ppm.charsbar.org/api/';
@@ -288,6 +284,82 @@ sub _unzip {
   $self->{extutils}{unzip}->(@_);
 }
 
+sub _get {
+  my $self = $_[0];
+  if ($self->{extutils}{get}) {
+    return $self->{extutils}{get}->(@_);
+  }
+  $self->_prepare_client;
+  $self->{extutils}{get}->(@_);
+}
+
+sub _mirror {
+  my $self = $_[0];
+  if ($self->{extutils}{mirror}) {
+    return $self->{extutils}{mirror}->(@_);
+  }
+  $self->_prepare_client;
+  $self->{extutils}{mirror}->(@_);
+}
+
+sub _prepare_client {
+  my $self = shift;
+
+  if ($self->{lwp} and eval { require LWP::UserAgent; LWP::UserAgent->VERSION(5.802) }) {
+    print "You have LWP::UserAgent $LWP::UserAgent::VERSION.\n";
+    my $ua = LWP::UserAgent->new(
+      parse_head => 0,
+      env_proxy  => 1,
+      agent      => "ppmminus/$App::ppmminus::script::VERSION",
+    );
+    $self->{extutils}{get} = sub {
+      my ($self, $uri) = @_;
+      my $res = $ua->get($uri);
+      return unless $res->is_success;
+      return $self->decoded_content;
+    };
+    $self->{extutils}{mirror} = sub {
+      my ($self, $uri, $path) = @_;
+      my $res = $ua->mirror($uri, $path);
+      return $res->code;
+    };
+  }
+  elsif ($self->{wget} and my $wget = _which('wget')) {
+    print "You have $wget.\n";
+    $self->{extutils}{get} = sub {
+      my ($self, $uri) = @_;
+      $self->_exec(my $fh, $wget, $uri, ($self->{verbose} ? () : '-q'), '-O', '-') or die "wget $uri: $!";
+      local $/;
+      <$fh>;
+    };
+    $self->{extutils}{mirror} = sub {
+      my ($self, $uri, $path) = @_;
+      $self->_exec(my $fh, $wget, $uri, ($self->{verbose} ? () : '-q'), '-O', $path) or die "wget $uri: $!";
+      local $/;
+      <$fh>;
+    };
+  }
+  elsif ($self->{curl} and my $curl = _which('curl')) {
+    print "You have $curl.\n";
+    $self->{extutils}{get} = sub {
+      my ($self, $uri) = @_;
+      $self->_exec(my $fh, $curl, '-L', ($self->{verbose} ? () : '-s'), $uri) or die "curl $uri: $!";
+      local $/;
+      <$fh>;
+    };
+    $self->{extutils}{mirror} = sub {
+      my ($self, $uri, $path) = @_;
+      $self->_exec(my $fh, $curl, '-L', $uri, ($self->{verbose} ? () : '-s'), '-#', '-o', $path) or die "curl $uri: $!";
+      local $/;
+      <$fh>;
+    };
+  }
+  else {
+    # XXX: fallback to HTTP::Tiny?
+    die "requires wget, curl, or LWP::UserAgent";
+  }
+}
+
 sub _quote {
   $_[0] =~ /^${quote}.+${quote}$/ ? $_[0] : "$quote$_[0]$quote";
 }
@@ -314,6 +386,27 @@ sub _workdir {
   my $workdir = "$ENV{HOME}/.ppmm/download/".time."-$$";
   File::Path::mkpath($workdir, $self->{verbose}, 0777);
   $self->{workdir} = $workdir;
+}
+
+sub _exec {
+  my $self = shift;
+  my $h = $_[0] ||= Symbol::gensym();
+
+  if ($^O eq 'MSWin32') {
+    my $cmd = join ' ', map { _quote($_) } @_[1..$#_];
+    return open $h, "$cmd |";
+  }
+
+  if (my $pid = open $h, '-|') {
+    return $pid;
+  }
+  elsif (defined $pid) {
+    exec @_[1..$#_];
+    exit 1;
+  }
+  else {
+    return;
+  }
 }
 
 __END__
