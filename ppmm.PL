@@ -21,7 +21,7 @@ use warnings;
 
 our \$VERSION = '$App::ppmminus::VERSION';
 
-local $ENV{CYGWIN} = 'nodosfilewarning';
+local \$ENV{CYGWIN} = 'nodosfilewarning';
 
 App::ppmminus::script->new->run(\@ARGV);
 
