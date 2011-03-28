@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use Config ();
 use ExtUtils::Install ();
+use Cwd ();
 use File::Path ();
 use File::Spec;
 use Getopt::Long ();
@@ -24,6 +25,7 @@ sub new {
   bless {
     %{ _get_options() },
     workdir  => undef,
+    curdir   => Cwd::cwd(),
     extutils => {},
     arch     => _my_arch(),
   }, $class;
@@ -31,6 +33,7 @@ sub new {
 
 sub DESTROY {
   my $self = shift;
+  chdir($self->{curdir}) if $self->{curdir};
   my $workdir = $self->{workdir};
   File::Path::rmtree($workdir) if $workdir && -d $workdir;
 }
@@ -102,22 +105,20 @@ DISTLOOP:
     }
   }
 
+  chdir($self->_workdir);
   for my $dist (reverse @dists) {
     my $name = $dist->{name};
     my $uri = $dist->{codebase};
     print "installing $name from $uri\n";
 
     my ($basename) = $uri =~ m{([^/]+)$};
-    my $archive = File::Spec->catfile($self->_workdir, $basename);
-    $archive =~ s{\\}{/}g;
-    $self->_mirror($uri, $archive);
-    my $dir = File::Spec->catdir($self->_workdir, $name);
-    $dir =~ s{\\}{/}g;
+    $self->_mirror($uri, $basename);
+
     if ($basename =~ /\.tar\.gz$/) {
-      my $res = $self->_untar($archive, $dir);
+      my $res = $self->_untar($basename);
     }
     elsif ($basename =~ /\.zip$/) {
-      my $res = $self->_unzip($archive, $dir);
+      my $res = $self->_unzip($basename);
     }
     else {
       die "Unknown archive type: $uri";
@@ -130,7 +131,7 @@ DISTLOOP:
              : 'site';
     my %from_to;
     for my $type (qw/arch bin lib man1 man3 script/) {
-      my $subdir = File::Spec->catdir($dir, "blib/$type");
+      my $subdir = "blib/$type";
       $from_to{$subdir} = $Config::Config{"install$area$type"}
                        || $Config::Config{"installsite$type"}
                        || $Config::Config{"install$type"};
@@ -219,7 +220,7 @@ sub _my_arch {
 # borrowed from App::cpanminus by Tatsuhiko Miyagawa
 
 sub _untar {
-  my $self = shift;
+  my $self = $_[0];
   if ($self->{extutils}{untar}) {
     return $self->{extutils}{untar}->(@_);
   }
@@ -233,28 +234,27 @@ sub _untar {
     chomp $tar_ver;
     print "use $tar $tar_ver\n";
     $self->{extutils}{untar} = sub {
-      my ($file, $into) = @_;
+      my ($self, $file) = @_;
 
       my $xf = ($self->{verbose} ? 'v' : '') . "zxf";
       my ($root, @others) = `$tar tfz $file` or return;
 
       chomp $root;
       $root =~ s{/([^/]*)}{};
-      system("$tar $xf --directory=$into $file") and die $?;
+      system("$tar $xf $file") and die $?;
     };
   }
   elsif ($tar and my $gzip = _which('gzip')) {
     print "use $tar and $gzip\n";
     $self->{extutils}{untar} = sub {
-      my ($file, $into) = @_;
+      my ($self, $file) = @_;
 
       my $xf = ($self->{verbose} ? 'v' : '') . "xf -";
       my ($root, @others) = `$gzip -dc $file | $tar tf -` or return;
 
       chomp $root;
       $root =~ s{/([^/]*)}{};
-      File::Path::mkpath($into, $self->{verbose}, 0777);
-      system("$gzip -dc $file | $tar $xf --directory=$into") and die $?;
+      system("$gzip -dc $file | $tar $xf") and die $?;
     };
   }
   else {
@@ -264,7 +264,7 @@ sub _untar {
 }
 
 sub _unzip {
-  my $self = shift;
+  my $self = $_[0];
   if ($self->{extutils}{unzip}) {
     return $self->{extutils}{unzip}->(@_);
   }
@@ -272,7 +272,7 @@ sub _unzip {
   if (my $unzip = _which('unzip')) {
     print "use $unzip\n";
     $self->{extutils}{unzip} = sub {
-      my ($file, $into) = @_;
+      my ($self, $file) = @_;
 
       my $opt = $self->{verbose} ? '' : '-q';
       my (undef, $root, @others) = `$unzip -t $file` or return;
@@ -280,7 +280,7 @@ sub _unzip {
       chomp $root;
       $root =~ s{^\s+testing:\s+(.+?)/\s+OK$}{$1};
 
-      system("$unzip $opt -d $into $file") and die $?;
+      system("$unzip $opt $file") and die $?;
     };
   }
   else {
