@@ -135,6 +135,7 @@ DISTLOOP:
       $from_to{$subdir} = $Config::Config{"install$area$type"}
                        || $Config::Config{"installsite$type"}
                        || $Config::Config{"install$type"};
+      delete $from{$subdir} unless $from{$subdir};
     }
 
     ExtUtils::Install::install([
