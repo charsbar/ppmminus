@@ -7,6 +7,7 @@ use ExtUtils::Install ();
 use File::Path ();
 use File::Spec;
 use Getopt::Long ();
+use Symbol ();
 
 my (%escape, %core, $quote);
 
