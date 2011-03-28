@@ -320,7 +320,7 @@ sub _prepare_client {
       my ($self, $uri) = @_;
       my $res = $ua->get($uri);
       return unless $res->is_success;
-      return $self->decoded_content;
+      return $res->decoded_content;
     };
     $self->{extutils}{mirror} = sub {
       my ($self, $uri, $path) = @_;
