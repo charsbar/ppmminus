@@ -26,7 +26,7 @@ sub new {
     %{ _get_options() },
     workdir  => undef,
     curdir   => Cwd::cwd(),
-    extutils => {},
+    backends => {},
     arch     => _my_arch(),
   }, $class;
 }
@@ -222,8 +222,8 @@ sub _my_arch {
 
 sub _untar {
   my $self = $_[0];
-  if ($self->{extutils}{untar}) {
-    return $self->{extutils}{untar}->(@_);
+  if ($self->{backends}{untar}) {
+    return $self->{backends}{untar}->(@_);
   }
 
   my $tar = _which('tar');
@@ -234,7 +234,7 @@ sub _untar {
   if ($tar && !$maybe_bad_tar) {
     chomp $tar_ver;
     print "use $tar $tar_ver\n";
-    $self->{extutils}{untar} = sub {
+    $self->{backends}{untar} = sub {
       my ($self, $file) = @_;
 
       my $xf = ($self->{verbose} ? 'v' : '') . "zxf";
@@ -247,7 +247,7 @@ sub _untar {
   }
   elsif ($tar and my $gzip = _which('gzip')) {
     print "use $tar and $gzip\n";
-    $self->{extutils}{untar} = sub {
+    $self->{backends}{untar} = sub {
       my ($self, $file) = @_;
 
       my $xf = ($self->{verbose} ? 'v' : '') . "xf -";
@@ -261,18 +261,18 @@ sub _untar {
   else {
     # TODO: Archive::Tar
   }
-  $self->{extutils}{untar}->(@_);
+  $self->{backends}{untar}->(@_);
 }
 
 sub _unzip {
   my $self = $_[0];
-  if ($self->{extutils}{unzip}) {
-    return $self->{extutils}{unzip}->(@_);
+  if ($self->{backends}{unzip}) {
+    return $self->{backends}{unzip}->(@_);
   }
 
   if (my $unzip = _which('unzip')) {
     print "use $unzip\n";
-    $self->{extutils}{unzip} = sub {
+    $self->{backends}{unzip} = sub {
       my ($self, $file) = @_;
 
       my $opt = $self->{verbose} ? '' : '-q';
@@ -287,25 +287,25 @@ sub _unzip {
   else {
     # TODO: Archive::Zip
   }
-  $self->{extutils}{unzip}->(@_);
+  $self->{backends}{unzip}->(@_);
 }
 
 sub _get {
   my $self = $_[0];
-  if ($self->{extutils}{get}) {
-    return $self->{extutils}{get}->(@_);
+  if ($self->{backends}{get}) {
+    return $self->{backends}{get}->(@_);
   }
   $self->_prepare_client;
-  $self->{extutils}{get}->(@_);
+  $self->{backends}{get}->(@_);
 }
 
 sub _mirror {
   my $self = $_[0];
-  if ($self->{extutils}{mirror}) {
-    return $self->{extutils}{mirror}->(@_);
+  if ($self->{backends}{mirror}) {
+    return $self->{backends}{mirror}->(@_);
   }
   $self->_prepare_client;
-  $self->{extutils}{mirror}->(@_);
+  $self->{backends}{mirror}->(@_);
 }
 
 sub _prepare_client {
@@ -318,13 +318,13 @@ sub _prepare_client {
       env_proxy  => 1,
       agent      => "ppmminus/$VERSION",
     );
-    $self->{extutils}{get} = sub {
+    $self->{backends}{get} = sub {
       my ($self, $uri) = @_;
       my $res = $ua->get($uri);
       return unless $res->is_success;
       return $res->decoded_content;
     };
-    $self->{extutils}{mirror} = sub {
+    $self->{backends}{mirror} = sub {
       my ($self, $uri, $path) = @_;
       my $res = $ua->mirror($uri, $path);
       return $res->code;
@@ -332,13 +332,13 @@ sub _prepare_client {
   }
   elsif ($self->{wget} and my $wget = _which('wget')) {
     print "You have $wget.\n";
-    $self->{extutils}{get} = sub {
+    $self->{backends}{get} = sub {
       my ($self, $uri) = @_;
       $self->_exec(my $fh, $wget, $uri, ($self->{verbose} ? () : '-q'), '-O', '-') or die "wget $uri: $!";
       local $/;
       <$fh>;
     };
-    $self->{extutils}{mirror} = sub {
+    $self->{backends}{mirror} = sub {
       my ($self, $uri, $path) = @_;
       $self->_exec(my $fh, $wget, $uri, ($self->{verbose} ? () : '-q'), '-O', $path) or die "wget $uri: $!";
       local $/;
@@ -347,13 +347,13 @@ sub _prepare_client {
   }
   elsif ($self->{curl} and my $curl = _which('curl')) {
     print "You have $curl.\n";
-    $self->{extutils}{get} = sub {
+    $self->{backends}{get} = sub {
       my ($self, $uri) = @_;
       $self->_exec(my $fh, $curl, '-L', ($self->{verbose} ? () : '-s'), $uri) or die "curl $uri: $!";
       local $/;
       <$fh>;
     };
-    $self->{extutils}{mirror} = sub {
+    $self->{backends}{mirror} = sub {
       my ($self, $uri, $path) = @_;
       $self->_exec(my $fh, $curl, '-L', $uri, ($self->{verbose} ? () : '-s'), '-#', '-o', $path) or die "curl $uri: $!";
       local $/;
