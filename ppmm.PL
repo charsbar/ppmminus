@@ -3,7 +3,6 @@ use warnings;
 use lib 'lib';
 use FindBin;
 use File::Path ();
-use App::ppmminus;
 
 my $path = "$FindBin::Bin/" . shift;
 (my $dir = $path) =~ s{[\\/]?([^\\/]+)$}{};
@@ -18,8 +17,6 @@ print $out <<"PREAMBLE";
 #!perl
 use strict;
 use warnings;
-
-our \$VERSION = '$App::ppmminus::VERSION';
 
 local \$ENV{CYGWIN} = 'nodosfilewarning';
 

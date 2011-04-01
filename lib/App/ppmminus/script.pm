@@ -9,6 +9,7 @@ use File::Path ();
 use File::Spec;
 use Getopt::Long ();
 use Symbol ();
+use App::ppmminus;
 
 my (%escape, %core, $quote);
 
@@ -316,7 +317,7 @@ sub _prepare_client {
     my $ua = LWP::UserAgent->new(
       parse_head => 0,
       env_proxy  => 1,
-      agent      => "ppmminus/$VERSION",
+      agent      => "ppmminus/$App::ppmminus::VERSION",
     );
     $self->{backends}{get} = sub {
       my ($self, $uri) = @_;

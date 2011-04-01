@@ -16,6 +16,7 @@ my %params = (
   EXE_FILES => [qw/ppmm/],
   PM => {
     'lib/App/ppmminus.pm' => '$(INST_LIB)/App/ppmminus.pm',
+    'lib/App/ppmminus/script.pm' => '$(INST_LIB)/App/ppmminus/script.pm',
   },
   clean => { FILES => 'ppmm' },
   META_MERGE => {
