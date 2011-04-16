@@ -66,7 +66,10 @@ sub install {
   my %requires;
 
   while(my $name = shift @args) {
-    next if $seen{$name}++;
+    if ($seen{$name}++) {
+      warn "DEBUG: $name was seen\n" if $self->{debug};
+      next;
+    }
 
     my $uri = _build_url($self->{server}, {
       c    => 'install',
@@ -79,7 +82,11 @@ sub install {
       my $req_ver = exists $requires{$name}
         ? ($requires{$name} || 0)
         : undef;
-      next if defined $req_ver && _is_core($module, $req_ver);
+      if (defined $req_ver && _is_core($module, $req_ver)) {
+        warn "DEBUG: no ppm packages for $module (it's in core)\n"
+          if $self->{debug}; 
+        next;
+      }
       warn "$name not found\n";
       next;
     }
@@ -92,7 +99,10 @@ DISTLOOP:
       my $version = $item->{version};
       next if grep { $_->{name} eq $name && ($_->{version} || 0) >= $version } @dists;
       for my $provide (@{$item->{provide} || []}) {
-        next DISTLOOP if $requires{$provide->{name}} && $requires{$provide->{name}} > ($provide->{version} || 0);
+        if ($requires{$provide->{name}} && $requires{$provide->{name}} > ($provide->{version} || 0)) {
+          warn "better $provide->{name} ($requires{$provide->{name}}) is required than ".($provide->{version} || 0)."\n" if $self->{debug};
+          next DISTLOOP;
+        }
       }
 
       push @dists, {
@@ -162,6 +172,7 @@ sub _get_options {
   Getopt::Long::GetOptions(\my %opts, qw{
     force
     verbose
+    debug
     dry_run
     area
     server=s
@@ -171,6 +182,7 @@ sub _get_options {
   });
 
   $opts{server} ||= 'http://ppm.charsbar.org/api/';
+  $opts{debug} = 1 if $ENV{PPMMINUS_DEBUG};
 
   if (!defined $opts{lwp} && !$opts{wget} && !$opts{curl}) {
     $opts{lwp} = 1;
