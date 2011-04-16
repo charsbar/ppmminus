@@ -90,7 +90,6 @@ sub install {
       warn "$name not found\n";
       next;
     }
-    print "going to install $name\n";
     my $items = eval $content;
 
 DISTLOOP:
@@ -98,12 +97,26 @@ DISTLOOP:
       my $name    = $item->{name};
       my $version = $item->{version};
       next if grep { $_->{name} eq $name && ($_->{version} || 0) >= $version } @dists;
+
+      my $needs_update = undef;
       for my $provide (@{$item->{provide} || []}) {
-        if ($requires{$provide->{name}} && $requires{$provide->{name}} > ($provide->{version} || 0)) {
-          warn "better $provide->{name} ($requires{$provide->{name}}) is required than ".($provide->{version} || 0)."\n" if $self->{debug};
+        my ($pn, $pv) = ($provide->{name}, $provide->{version} || 0);
+        if ($requires{$pn} && $requires{$pn} > $pv) {
+          warn "better $pn ($requires{$pn}) is required than $pv\n" if $self->{debug};
           next DISTLOOP;
         }
+        unless ($self->_has_module($pn, $pv)) {
+          $needs_update = 1;
+          last;
+        }
+        $needs_update ||= 0;
       }
+      if (defined $needs_update && !$needs_update) {
+        warn "$name ($version) is up to date\n";
+        next unless $self->{force};
+      }
+
+      print "going to install $name\n";
 
       push @dists, {
         name     => $name,
@@ -201,6 +214,19 @@ sub _set_corelist {
 sub _is_core {
   my ($name, $version) = @_;
   if (exists $core{$name} && ($core{$name} || 0) >= ($version || 0)) {
+    return 1;
+  }
+  return;
+}
+
+sub _has_module {
+  my ($self, $name, $version) = @_;
+  require Module::Metadata;
+  my $meta = Module::Metadata->new_from_module($name);
+  return unless $meta;
+  my $meta_ver = $meta->version;
+  if (($meta_ver || 0) >= ($version || 0)) {
+    warn "$name $version is installed or has better alternative ($meta_ver).\n" if $self->{debug};
     return 1;
   }
   return;
