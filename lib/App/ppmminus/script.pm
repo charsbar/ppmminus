@@ -66,6 +66,8 @@ sub install {
   my %requires;
 
   while(my $name = shift @args) {
+    next if $seen{$name}++;
+
     my $uri = _build_url($self->{server}, {
       c    => 'install',
       arch => $self->{arch},
@@ -99,7 +101,6 @@ DISTLOOP:
         codebase => $item->{codebase},
       };
       for my $require (@{$item->{require} || []}) {
-        next if $seen{$require->{name}}++;
         push @args, $require->{name};
         $requires{$require->{name}} = $require->{version};
       }
