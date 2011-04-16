@@ -3,6 +3,7 @@ use warnings;
 use lib 'lib';
 use FindBin;
 use File::Path ();
+use App::ppmminus;
 
 my $path = "$FindBin::Bin/" . shift;
 (my $dir = $path) =~ s{[\\/]?([^\\/]+)$}{};
@@ -20,11 +21,14 @@ use warnings;
 
 local \$ENV{CYGWIN} = 'nodosfilewarning';
 
+\$App::ppmminus::VERSION = $App::ppmminus::VERSION;
+
 App::ppmminus::script->new->run(\@ARGV);
 
 PREAMBLE
 
 while (<$fh>) {
   next if /^#!.*perl/;
+  next if /^use App::ppmminus;/;
   print $out $_;
 }
