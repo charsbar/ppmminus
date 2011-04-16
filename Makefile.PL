@@ -9,6 +9,7 @@ my %params = (
   ABSTRACT_FROM => 'lib/App/ppmminus.pm',
   LICENSE       => 'perl',
   PREREQ_PM     => {
+    'Module::Metadata' => 0,  # XXX: to be fatpacked later
   },
   BUILD_REQUIRES => {
     'Test::More' => '0.47',
